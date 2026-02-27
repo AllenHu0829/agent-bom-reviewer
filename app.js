@@ -1,6 +1,6 @@
 /* ──────────────────────────────────────────────────────────
-   BOM 审核专家 – app.js v3
-   流程：上传 → 自动列映射（显示状态摘要，可展开修改） → 点击分析
+   BOM 审核专家 – app.js v6
+   流程：上传 → 自动列映射 → 点击分析 → 展示检查项清单 + 结果
    ────────────────────────────────────────────────────────── */
 
 const BOM_FIELDS = [
@@ -15,11 +15,21 @@ const BOM_FIELDS = [
 
 const FIELD_OPTIONS = BOM_FIELDS.map(f => ({ key: f.key, label: f.label + (f.required ? ' *' : ''), required: f.required }));
 
+const AUDIT_RULES = [
+  { id: 'banned',    name: '禁用清单比对',       desc: '将料号和厂商料号与上传的禁用物料清单逐一比对' },
+  { id: 'banned-kw', name: '禁用关键词扫描',     desc: '扫描所有单元格是否含有"禁用""停用""淘汰"等字样' },
+  { id: 'nc',        name: 'NC/NI 物料检测',      desc: '检测厂商料号中是否含有 /NC、\\NC、/NI、\\NI 等未安装标记' },
+  { id: 'qty',       name: '用量与位号数量校验',  desc: '按分隔符拆分位号并计数，与基本用量比对' },
+  { id: 'dup-pn',    name: '重复料号检查',        desc: '检查 BOM 中是否存在相同料号出现在多行' },
+  { id: 'dup-mpn',   name: '重复厂商料号检查',    desc: '检查 BOM 中是否存在相同厂商料号出现在多行' },
+];
+
 let bomRows = [];
 let bomColumns = [];
 let columnMap = {};
 let banList = new Set();
 let auditResults = [];
+let auditSummary = [];
 
 /* ═══ DOM refs ═══ */
 const $ = id => document.getElementById(id);
@@ -365,17 +375,33 @@ function highlightTableRow(rowIdx) {
 /* ═══ Audit Engine ═══ */
 function runAudit() {
   auditResults = [];
+  auditSummary = [];
   if (!bomRows.length) { clearResults(); return; }
 
-  checkBannedParts();
-  checkBannedKeywords();
-  checkQuantity();
-  checkDuplicatePN();
-  checkDuplicateMPN();
+  runRule('banned',    checkBannedParts);
+  runRule('banned-kw', checkBannedKeywords);
+  runRule('nc',        checkNCParts);
+  runRule('qty',       checkQuantity);
+  runRule('dup-pn',    checkDuplicatePN);
+  runRule('dup-mpn',   checkDuplicateMPN);
 
   applyRowStyles();
   renderResults();
   updateSummary();
+}
+
+function runRule(ruleId, fn) {
+  const before = auditResults.length;
+  fn();
+  const found = auditResults.length - before;
+  const rule = AUDIT_RULES.find(r => r.id === ruleId);
+  auditSummary.push({
+    id: ruleId,
+    name: rule?.name || ruleId,
+    desc: rule?.desc || '',
+    found,
+    skipped: false,
+  });
 }
 
 function addResult(type, severity, desc, rows) {
@@ -384,7 +410,13 @@ function addResult(type, severity, desc, rows) {
 
 /* ── Rule 1a: Banned Parts (against uploaded ban list) ── */
 function checkBannedParts() {
-  if (!banList.size) return;
+  if (!banList.size) {
+    const idx = auditSummary.length;
+    setTimeout(() => {
+      if (auditSummary[idx]) auditSummary[idx].skipped = true;
+    }, 0);
+    return;
+  }
   bomRows.forEach((row, i) => {
     const pn = col(row, 'partNumber').toUpperCase();
     const mpn = col(row, 'mpn').toUpperCase();
@@ -415,11 +447,24 @@ function checkBannedKeywords() {
   });
 }
 
+/* ── Rule 1c: NC/NI (Not Installed) detection in MPN ── */
+const NC_PATTERN = /[/\\](nc|ni)\b/i;
+
+function checkNCParts() {
+  bomRows.forEach((row, i) => {
+    const mpn = col(row, 'mpn');
+    if (!mpn) return;
+    if (NC_PATTERN.test(mpn)) {
+      addResult('nc', 'warning',
+        `疑似未安装物料：厂商料号 "${mpn}"，请确认是否需要移除`,
+        [i]);
+    }
+  });
+}
+
 /* ── Rule 2: Quantity Check ── */
 function parseRefs(refStr) {
   if (!refStr) return [];
-  // 英文逗号,  中文逗号，  英文分号;  中文分号；  顿号、
-  // 斜杠/  空格  制表符  换行符
   return refStr.split(/[,，;；、/\s]+/).map(s => s.trim()).filter(Boolean);
 }
 
@@ -499,16 +544,25 @@ function clearResults() {
 
 function renderResults() {
   resultsGroups.innerHTML = '';
+  resultsPlaceholder.style.display = 'none';
+
+  renderChecklistPanel();
+
   if (!auditResults.length) {
-    resultsPlaceholder.style.display = 'flex';
-    resultsPlaceholder.querySelector('.placeholder-text').textContent = '审核通过，未发现问题';
-    resultsPlaceholder.querySelector('.placeholder-icon').textContent = '🎉';
+    const passDiv = document.createElement('div');
+    passDiv.className = 'all-pass';
+    passDiv.innerHTML = '<span class="all-pass-icon">🎉</span><span>全部检查通过，未发现问题</span>';
+    resultsGroups.appendChild(passDiv);
     return;
   }
-  resultsPlaceholder.style.display = 'none';
 
   const groups = { error: [], warning: [], info: [] };
   auditResults.forEach(r => groups[r.severity].push(r));
+
+  const TYPE_LABELS = {
+    banned: '禁用物料', 'banned-kw': '禁用标记', nc: 'NC/NI 物料',
+    qty: '数量不匹配', 'dup-pn': '重复料号', 'dup-mpn': '重复厂商料号'
+  };
 
   const labels = { error: '错误', warning: '警告', info: '提示' };
   for (const sev of ['error', 'warning', 'info']) {
@@ -525,10 +579,7 @@ function renderResults() {
     groups[sev].forEach(r => {
       const item = document.createElement('div');
       item.className = 'result-item';
-      const typeLabel = {
-        banned: '禁用物料', 'banned-kw': '禁用标记', qty: '数量不匹配',
-        'dup-pn': '重复料号', 'dup-mpn': '重复厂商料号'
-      }[r.type] || r.type;
+      const typeLabel = TYPE_LABELS[r.type] || r.type;
       item.innerHTML = `
         <span class="ri-type ri-type-${r.type}">${typeLabel}</span>
         <span class="ri-desc">${r.desc}</span>
@@ -547,6 +598,38 @@ function renderResults() {
   }
 }
 
+function renderChecklistPanel() {
+  const panel = document.createElement('div');
+  panel.className = 'checklist-panel';
+  panel.innerHTML = '<div class="checklist-title">审核检查项</div>';
+  const list = document.createElement('div');
+  list.className = 'checklist-list';
+
+  auditSummary.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'checklist-row';
+
+    let icon, statusText, statusClass;
+    if (s.skipped) {
+      icon = '⊘'; statusText = '跳过（未上传禁用清单）'; statusClass = 'ck-skip';
+    } else if (s.found === 0) {
+      icon = '✓'; statusText = '通过'; statusClass = 'ck-pass';
+    } else {
+      icon = '✗'; statusText = `发现 ${s.found} 项`; statusClass = 'ck-fail';
+    }
+
+    row.innerHTML = `
+      <span class="ck-icon ${statusClass}">${icon}</span>
+      <span class="ck-name">${s.name}</span>
+      <span class="ck-desc">${s.desc}</span>
+      <span class="ck-status ${statusClass}">${statusText}</span>`;
+    list.appendChild(row);
+  });
+
+  panel.appendChild(list);
+  resultsGroups.appendChild(panel);
+}
+
 function updateSummary(empty) {
   $('sumTotal').textContent = empty ? 0 : bomRows.length;
   $('sumError').textContent = empty ? 0 : auditResults.filter(r => r.severity === 'error').length;
@@ -555,12 +638,17 @@ function updateSummary(empty) {
 }
 
 /* ═══ Export Report ═══ */
+const TYPE_LABELS_EXPORT = {
+  banned: '禁用物料', 'banned-kw': '禁用标记', nc: 'NC/NI 物料',
+  qty: '数量不匹配', 'dup-pn': '重复料号', 'dup-mpn': '重复厂商料号'
+};
+
 exportReportBtn.addEventListener('click', () => {
   if (!auditResults.length && !bomRows.length) return;
 
   const reportRows = auditResults.map(r => ({
     '严重程度': { error: '错误', warning: '警告', info: '提示' }[r.severity],
-    '类型': { banned:'禁用物料', 'banned-kw':'禁用标记', qty:'数量不匹配', 'dup-pn':'重复料号', 'dup-mpn':'重复厂商料号' }[r.type],
+    '类型': TYPE_LABELS_EXPORT[r.type] || r.type,
     '描述': r.desc,
     '涉及行号': r.rows.map(i => bomRows[i]._idx).join(', ')
   }));
@@ -570,6 +658,15 @@ exportReportBtn.addEventListener('click', () => {
   }
 
   const wb = XLSX.utils.book_new();
+
+  const summaryRows = auditSummary.map(s => ({
+    '检查项': s.name,
+    '说明': s.desc,
+    '结果': s.skipped ? '跳过' : (s.found === 0 ? '通过' : `发现 ${s.found} 项`),
+  }));
+  const ws0 = XLSX.utils.json_to_sheet(summaryRows);
+  XLSX.utils.book_append_sheet(wb, ws0, '检查项清单');
+
   const ws1 = XLSX.utils.json_to_sheet(reportRows);
   XLSX.utils.book_append_sheet(wb, ws1, '审核结果');
 

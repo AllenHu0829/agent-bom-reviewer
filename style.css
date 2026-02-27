@@ -306,9 +306,61 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 }
 .ri-type-banned { background: #fde8e8; color: #c0392b; }
 .ri-type-banned-kw { background: #fde8e8; color: #c0392b; }
+.ri-type-nc { background: #fff3e0; color: #e65100; }
 .ri-type-qty { background: #fde8e8; color: #c0392b; }
 .ri-type-dup-pn { background: #fef3cd; color: #856404; }
 .ri-type-dup-mpn { background: #fef3cd; color: #856404; }
+
+/* ─── Checklist Panel ─── */
+.checklist-panel {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  overflow: hidden;
+}
+.checklist-title {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  background: #f7f8fa;
+  border-bottom: 1px solid #eee;
+}
+.checklist-list { padding: 4px 0; }
+.checklist-row {
+  display: grid;
+  grid-template-columns: 22px 1fr 1.5fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.checklist-row:last-child { border-bottom: none; }
+.ck-icon { font-size: 14px; font-weight: 700; text-align: center; }
+.ck-icon.ck-pass { color: #27ae60; }
+.ck-icon.ck-fail { color: #e74c3c; }
+.ck-icon.ck-skip { color: #aaa; }
+.ck-name { font-weight: 600; }
+.ck-desc { color: #888; }
+.ck-status { font-weight: 600; white-space: nowrap; }
+.ck-status.ck-pass { color: #27ae60; }
+.ck-status.ck-fail { color: #e74c3c; }
+.ck-status.ck-skip { color: #aaa; }
+
+.all-pass {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  font-size: 16px;
+  font-weight: 600;
+  color: #27ae60;
+}
+.all-pass-icon { font-size: 28px; }
 
 /* ─── Mobile ─── */
 @media (max-width: 800px) {
