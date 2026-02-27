@@ -305,6 +305,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   flex-shrink: 0;
 }
 .ri-type-banned { background: #fde8e8; color: #c0392b; }
+.ri-type-banned-kw { background: #fde8e8; color: #c0392b; }
 .ri-type-qty { background: #fde8e8; color: #c0392b; }
 .ri-type-dup-pn { background: #fef3cd; color: #856404; }
 .ri-type-dup-mpn { background: #fef3cd; color: #856404; }

@@ -368,6 +368,7 @@ function runAudit() {
   if (!bomRows.length) { clearResults(); return; }
 
   checkBannedParts();
+  checkBannedKeywords();
   checkQuantity();
   checkDuplicatePN();
   checkDuplicateMPN();
@@ -381,7 +382,7 @@ function addResult(type, severity, desc, rows) {
   auditResults.push({ type, severity, desc, rows });
 }
 
-/* ── Rule 1: Banned Parts ── */
+/* ── Rule 1a: Banned Parts (against uploaded ban list) ── */
 function checkBannedParts() {
   if (!banList.size) return;
   bomRows.forEach((row, i) => {
@@ -392,6 +393,24 @@ function checkBannedParts() {
     }
     if (mpn && banList.has(mpn)) {
       addResult('banned', 'error', `禁用物料：厂商料号 "${col(row,'mpn')}"`, [i]);
+    }
+  });
+}
+
+/* ── Rule 1b: Scan for banned/disabled keywords in any cell ── */
+const BANNED_KEYWORDS = ['禁用','停用','淘汰','废弃','停产','禁止','banned','obsolete','discontinued','eol'];
+
+function checkBannedKeywords() {
+  bomRows.forEach((row, i) => {
+    for (const c of bomColumns) {
+      const val = String(row[c] || '');
+      const hit = BANNED_KEYWORDS.find(kw => val.toLowerCase().includes(kw));
+      if (hit) {
+        addResult('banned-kw', 'error',
+          `发现禁用标记：列"${c}"含有"${hit}"（${val.length > 40 ? val.slice(0, 40) + '…' : val}）`,
+          [i]);
+        break;
+      }
     }
   });
 }
@@ -507,7 +526,7 @@ function renderResults() {
       const item = document.createElement('div');
       item.className = 'result-item';
       const typeLabel = {
-        banned: '禁用物料', qty: '数量不匹配',
+        banned: '禁用物料', 'banned-kw': '禁用标记', qty: '数量不匹配',
         'dup-pn': '重复料号', 'dup-mpn': '重复厂商料号'
       }[r.type] || r.type;
       item.innerHTML = `
@@ -541,7 +560,7 @@ exportReportBtn.addEventListener('click', () => {
 
   const reportRows = auditResults.map(r => ({
     '严重程度': { error: '错误', warning: '警告', info: '提示' }[r.severity],
-    '类型': { banned:'禁用物料', qty:'数量不匹配', 'dup-pn':'重复料号', 'dup-mpn':'重复厂商料号' }[r.type],
+    '类型': { banned:'禁用物料', 'banned-kw':'禁用标记', qty:'数量不匹配', 'dup-pn':'重复料号', 'dup-mpn':'重复厂商料号' }[r.type],
     '描述': r.desc,
     '涉及行号': r.rows.map(i => bomRows[i]._idx).join(', ')
   }));
