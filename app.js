@@ -399,7 +399,9 @@ function checkBannedParts() {
 /* ── Rule 2: Quantity Check ── */
 function parseRefs(refStr) {
   if (!refStr) return [];
-  return refStr.split(/[,\s/;、]+/).map(s => s.trim()).filter(Boolean);
+  // 英文逗号,  中文逗号，  英文分号;  中文分号；  顿号、
+  // 斜杠/  空格  制表符  换行符
+  return refStr.split(/[,，;；、/\s]+/).map(s => s.trim()).filter(Boolean);
 }
 
 function checkQuantity() {
