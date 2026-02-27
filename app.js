@@ -1,16 +1,16 @@
 /* ──────────────────────────────────────────────────────────
-   BOM 审核专家 – app.js v2
-   流程：上传 → 列映射（下拉框可修改） → 点击分析 → 审核结果
+   BOM 审核专家 – app.js v3
+   流程：上传 → 自动列映射（显示状态摘要，可展开修改） → 点击分析
    ────────────────────────────────────────────────────────── */
 
 const BOM_FIELDS = [
   { key: 'partNumber',  label: '料号',       required: true,  aliases: ['料号','物料编码','part number','partnumber','物料号','p/n','pn','编码','内部料号','item number','item no','item no.'] },
   { key: 'mpn',         label: '厂商料号',   required: true,  aliases: ['厂商料号','mpn','manufacturer part number','厂家型号','型号','制造商料号','mfr part','mfr p/n','vendor p/n'] },
-  { key: 'qty',         label: '基本用量',   required: true,  aliases: ['基本用量','用量','数量','quantity','qty','需求数量','usage','基本用量(pcs)'] },
-  { key: 'ref',         label: '位号',       required: true,  aliases: ['位号','reference','ref','reference designator','designator','位置','ref des','位号标识','ref.des'] },
+  { key: 'qty',         label: '基本用量',   required: true,  aliases: ['基本用量','用量','数量','quantity','qty','需求数量','usage','基本用量(pcs)','基本用量（pcs）'] },
+  { key: 'ref',         label: '位号',       required: true,  aliases: ['位号','reference','ref','reference designator','designator','位置','ref des','位号标识','ref.des','ref des.'] },
   { key: 'description', label: '物料描述',   required: false, aliases: ['物料描述','描述','description','desc','品名','名称','物料名称','规格描述'] },
   { key: 'unit',        label: '计量单位',   required: false, aliases: ['计量单位','单位','unit','uom','计量'] },
-  { key: 'lossRate',    label: '子件损耗率', required: false, aliases: ['子件损耗率','损耗率','loss rate','损耗','scrap rate','loss'] },
+  { key: 'lossRate',    label: '子件损耗率', required: false, aliases: ['子件损耗率','损耗率','loss rate','损耗','scrap rate','loss','损耗率(%)','损耗率（%）'] },
 ];
 
 const FIELD_OPTIONS = BOM_FIELDS.map(f => ({ key: f.key, label: f.label + (f.required ? ' *' : ''), required: f.required }));
@@ -29,6 +29,10 @@ const banUpload        = $('banUpload');
 const banFileInput     = $('banFileInput');
 const fileInfo         = $('fileInfo');
 const mappingSection   = $('mappingSection');
+const mappingStatusBar = $('mappingStatusBar');
+const mappingStatusText = $('mappingStatusText');
+const mappingToggle    = $('mappingToggle');
+const mappingDetail    = $('mappingDetail');
 const mappingList      = $('mappingList');
 const btnAnalyze       = $('btnAnalyze');
 const bomHead          = $('bomHead');
@@ -127,6 +131,7 @@ function renderFileTag(type, name) {
 function autoMapColumns(fields) {
   const map = {};
   const used = new Set();
+
   for (const field of BOM_FIELDS) {
     for (const f of fields) {
       if (used.has(f)) continue;
@@ -138,6 +143,21 @@ function autoMapColumns(fields) {
       }
     }
   }
+
+  for (const field of BOM_FIELDS) {
+    if (map[field.key]) continue;
+    for (const f of fields) {
+      if (used.has(f)) continue;
+      const fl = f.toLowerCase().trim();
+      const matched = field.aliases.some(a => fl.includes(a) || a.includes(fl));
+      if (matched) {
+        map[field.key] = f;
+        used.add(f);
+        break;
+      }
+    }
+  }
+
   return map;
 }
 
@@ -145,15 +165,41 @@ function col(row, key) {
   return columnMap[key] ? String(row[columnMap[key]] ?? '').trim() : '';
 }
 
-/* ═══ Column Mapping UI ═══ */
+/* ═══ Mapping UI ═══ */
 function showMappingUI() {
   mappingSection.style.display = 'block';
+  mappingDetail.style.display = 'none';
   renderMappingList();
+  updateMappingStatus();
 }
 
 function hideMappingUI() {
   mappingSection.style.display = 'none';
   mappingList.innerHTML = '';
+}
+
+mappingToggle.addEventListener('click', () => {
+  const visible = mappingDetail.style.display !== 'none';
+  mappingDetail.style.display = visible ? 'none' : 'block';
+  mappingToggle.textContent = visible ? '修改映射 ▾' : '收起 ▴';
+});
+
+function updateMappingStatus() {
+  const requiredFields = BOM_FIELDS.filter(f => f.required);
+  const mappedRequired = requiredFields.filter(f => columnMap[f.key]);
+  const totalMapped = BOM_FIELDS.filter(f => columnMap[f.key]).length;
+  const allRequiredOk = mappedRequired.length === requiredFields.length;
+
+  if (allRequiredOk) {
+    mappingStatusText.textContent = `已自动识别 ${totalMapped}/${BOM_FIELDS.length} 列（${requiredFields.length} 项必填全部匹配）`;
+    mappingStatusText.className = 'mapping-status-text status-ok';
+  } else {
+    const missing = requiredFields.filter(f => !columnMap[f.key]).map(f => f.label);
+    mappingStatusText.textContent = `已识别 ${totalMapped}/${BOM_FIELDS.length} 列，缺少必填项：${missing.join('、')}`;
+    mappingStatusText.className = 'mapping-status-text status-warn';
+    mappingDetail.style.display = 'block';
+    mappingToggle.textContent = '收起 ▴';
+  }
 }
 
 function renderMappingList() {
@@ -231,6 +277,7 @@ function onMappingChange(select) {
   }
 
   mappingList.querySelectorAll('select').forEach(s => updateSelectStyle(s));
+  updateMappingStatus();
 }
 
 function updateSelectStyle(select) {
@@ -252,20 +299,10 @@ btnAnalyze.addEventListener('click', () => {
     if (errEl) errEl.remove();
     const err = document.createElement('span');
     err.className = 'mapping-error';
-    err.textContent = `缺少必填映射：${missing.map(f => f.label).join('、')}`;
+    err.textContent = `缺少必填映射：${missing.map(f => f.label).join('、')}，请展开修改映射`;
     btnAnalyze.parentElement.insertBefore(err, btnAnalyze);
-
-    mappingList.querySelectorAll('select').forEach(s => {
-      if (!s.value) {
-        const unmappedRequired = missing.some(f => !columnMap[f.key]);
-        if (unmappedRequired) {
-          const currentKey = s.value;
-          if (!currentKey) {
-            /* highlight selects that have no value when required fields are missing */
-          }
-        }
-      }
-    });
+    mappingDetail.style.display = 'block';
+    mappingToggle.textContent = '收起 ▴';
     return;
   }
 
@@ -434,7 +471,7 @@ function clearResults() {
   resultsGroups.innerHTML = '';
   resultsPlaceholder.style.display = 'flex';
   resultsPlaceholder.querySelector('.placeholder-icon').textContent = '📋';
-  resultsPlaceholder.querySelector('.placeholder-text').textContent = '上传 BOM 文件后配置列映射，点击"开始 BOM 分析"';
+  resultsPlaceholder.querySelector('.placeholder-text').textContent = '确认列映射后，点击"开始 BOM 分析"';
   updateSummary(true);
   bomBody.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-error', 'row-warning'));
 }

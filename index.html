@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BOM 审核专家</title>
-  <link rel="stylesheet" href="style.css?v=2" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <div class="app">
@@ -31,11 +31,13 @@
       <div class="file-info" id="fileInfo"></div>
 
       <div class="mapping-section" id="mappingSection" style="display:none">
-        <div class="mapping-header">
-          <span class="mapping-title">列映射配置</span>
-          <span class="mapping-hint">请确认每列对应的 BOM 属性，必填项标 *</span>
+        <div class="mapping-status-bar" id="mappingStatusBar">
+          <span class="mapping-status-text" id="mappingStatusText"></span>
+          <span class="mapping-toggle" id="mappingToggle">修改映射 ▾</span>
         </div>
-        <div class="mapping-list" id="mappingList"></div>
+        <div class="mapping-detail" id="mappingDetail" style="display:none">
+          <div class="mapping-list" id="mappingList"></div>
+        </div>
         <div class="mapping-actions">
           <button class="btn-analyze" id="btnAnalyze">开始 BOM 分析</button>
         </div>
@@ -88,6 +90,6 @@
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
