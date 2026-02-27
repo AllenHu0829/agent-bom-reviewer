@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BOM 审核专家</title>
-  <link rel="stylesheet" href="style.css?v=1" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
   <div class="app">
@@ -29,6 +29,17 @@
       </div>
 
       <div class="file-info" id="fileInfo"></div>
+
+      <div class="mapping-section" id="mappingSection" style="display:none">
+        <div class="mapping-header">
+          <span class="mapping-title">列映射配置</span>
+          <span class="mapping-hint">请确认每列对应的 BOM 属性，必填项标 *</span>
+        </div>
+        <div class="mapping-list" id="mappingList"></div>
+        <div class="mapping-actions">
+          <button class="btn-analyze" id="btnAnalyze">开始 BOM 分析</button>
+        </div>
+      </div>
 
       <div class="table-section" id="tableSection">
         <div class="table-toolbar">
@@ -68,7 +79,7 @@
       <div class="results-panel" id="resultsPanel">
         <div class="results-placeholder" id="resultsPlaceholder">
           <div class="placeholder-icon">📋</div>
-          <div class="placeholder-text">上传 BOM 文件后自动开始审核</div>
+          <div class="placeholder-text">上传 BOM 文件后配置列映射，点击"开始 BOM 分析"</div>
         </div>
         <div class="results-groups" id="resultsGroups"></div>
       </div>
@@ -77,6 +88,6 @@
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="app.js?v=1"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

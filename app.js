@@ -1,42 +1,42 @@
 /* ──────────────────────────────────────────────────────────
-   BOM 审核专家 – app.js
+   BOM 审核专家 – app.js v2
+   流程：上传 → 列映射（下拉框可修改） → 点击分析 → 审核结果
    ────────────────────────────────────────────────────────── */
 
-const COLUMN_ALIASES = {
-  partNumber:  ['料号','物料编码','part number','partnumber','物料号','p/n','pn','编码','内部料号','item number'],
-  description: ['物料描述','描述','description','desc','品名','名称','物料名称'],
-  pkg:         ['封装','package','footprint','pkg','封装规格'],
-  value:       ['value','参数值','参数','规格','值','参数/规格'],
-  qty:         ['用量','数量','quantity','qty','需求数量'],
-  ref:         ['位号','reference','ref','reference designator','designator','位置','ref des','位号标识'],
-  mfr:         ['厂商','manufacturer','制造商','厂家','品牌','vendor','供应商'],
-  mpn:         ['厂商料号','mpn','manufacturer part number','厂家型号','型号','制造商料号','mfr part']
-};
+const BOM_FIELDS = [
+  { key: 'partNumber',  label: '料号',       required: true,  aliases: ['料号','物料编码','part number','partnumber','物料号','p/n','pn','编码','内部料号','item number','item no','item no.'] },
+  { key: 'mpn',         label: '厂商料号',   required: true,  aliases: ['厂商料号','mpn','manufacturer part number','厂家型号','型号','制造商料号','mfr part','mfr p/n','vendor p/n'] },
+  { key: 'qty',         label: '基本用量',   required: true,  aliases: ['基本用量','用量','数量','quantity','qty','需求数量','usage','基本用量(pcs)'] },
+  { key: 'ref',         label: '位号',       required: true,  aliases: ['位号','reference','ref','reference designator','designator','位置','ref des','位号标识','ref.des'] },
+  { key: 'description', label: '物料描述',   required: false, aliases: ['物料描述','描述','description','desc','品名','名称','物料名称','规格描述'] },
+  { key: 'unit',        label: '计量单位',   required: false, aliases: ['计量单位','单位','unit','uom','计量'] },
+  { key: 'lossRate',    label: '子件损耗率', required: false, aliases: ['子件损耗率','损耗率','loss rate','损耗','scrap rate','loss'] },
+];
+
+const FIELD_OPTIONS = BOM_FIELDS.map(f => ({ key: f.key, label: f.label + (f.required ? ' *' : ''), required: f.required }));
 
 let bomRows = [];
 let bomColumns = [];
 let columnMap = {};
-let banList = [];
+let banList = new Set();
 let auditResults = [];
-let highlightedRow = -1;
 
 /* ═══ DOM refs ═══ */
 const $ = id => document.getElementById(id);
-const bomUpload     = $('bomUpload');
-const bomFileInput  = $('bomFileInput');
-const banUpload     = $('banUpload');
-const banFileInput  = $('banFileInput');
-const fileInfo      = $('fileInfo');
-const tableSection  = $('tableSection');
-const bomHead       = $('bomHead');
-const bomBody       = $('bomBody');
-const tableTitle    = $('tableTitle');
-const tableCount    = $('tableCount');
-const summaryBar    = $('summaryBar');
-const resultsPanel  = $('resultsPanel');
+const bomUpload        = $('bomUpload');
+const bomFileInput     = $('bomFileInput');
+const banUpload        = $('banUpload');
+const banFileInput     = $('banFileInput');
+const fileInfo         = $('fileInfo');
+const mappingSection   = $('mappingSection');
+const mappingList      = $('mappingList');
+const btnAnalyze       = $('btnAnalyze');
+const bomHead          = $('bomHead');
+const bomBody          = $('bomBody');
+const tableCount       = $('tableCount');
 const resultsPlaceholder = $('resultsPlaceholder');
-const resultsGroups = $('resultsGroups');
-const exportReportBtn = $('exportReportBtn');
+const resultsGroups    = $('resultsGroups');
+const exportReportBtn  = $('exportReportBtn');
 
 /* ═══ File Upload ═══ */
 function setupUploadBox(box, input, handler) {
@@ -79,22 +79,21 @@ function onFileParsed(data, fields, type, fileName) {
   if (type === 'bom') {
     bomColumns = fields;
     bomRows = data.map((r, i) => ({ _idx: i + 1, ...r }));
-    columnMap = mapColumns(fields);
+    columnMap = autoMapColumns(fields);
     renderFileTag('bom', fileName);
     renderTable();
-    runAudit();
+    showMappingUI();
+    clearResults();
   } else {
     banList = extractBanList(data, fields);
     renderFileTag('ban', fileName);
-    if (bomRows.length) runAudit();
   }
 }
 
 function extractBanList(data, fields) {
   const list = new Set();
-  const lowerFields = fields.map(f => f.toLowerCase().trim());
   data.forEach(row => {
-    fields.forEach((f, i) => {
+    fields.forEach(f => {
       const v = String(row[f] || '').trim();
       if (v) list.add(v.toUpperCase());
     });
@@ -114,20 +113,29 @@ function renderFileTag(type, name) {
   tag.innerHTML = `${icon} ${name} <span class="remove-file" data-rm="${type}">✕</span>`;
   tag.querySelector('.remove-file').addEventListener('click', e => {
     e.stopPropagation();
-    if (type === 'bom') { bomRows = []; bomColumns = []; columnMap = {}; clearTable(); clearResults(); }
-    else { banList = []; }
+    if (type === 'bom') {
+      bomRows = []; bomColumns = []; columnMap = {};
+      clearTable(); clearResults(); hideMappingUI();
+    } else {
+      banList = new Set();
+    }
     tag.remove();
-    if (bomRows.length) runAudit();
   });
 }
 
-/* ═══ Column Mapping ═══ */
-function mapColumns(fields) {
+/* ═══ Auto Column Mapping ═══ */
+function autoMapColumns(fields) {
   const map = {};
-  for (const [key, aliases] of Object.entries(COLUMN_ALIASES)) {
+  const used = new Set();
+  for (const field of BOM_FIELDS) {
     for (const f of fields) {
+      if (used.has(f)) continue;
       const fl = f.toLowerCase().trim();
-      if (aliases.includes(fl)) { map[key] = f; break; }
+      if (field.aliases.includes(fl)) {
+        map[field.key] = f;
+        used.add(f);
+        break;
+      }
     }
   }
   return map;
@@ -136,6 +144,136 @@ function mapColumns(fields) {
 function col(row, key) {
   return columnMap[key] ? String(row[columnMap[key]] ?? '').trim() : '';
 }
+
+/* ═══ Column Mapping UI ═══ */
+function showMappingUI() {
+  mappingSection.style.display = 'block';
+  renderMappingList();
+}
+
+function hideMappingUI() {
+  mappingSection.style.display = 'none';
+  mappingList.innerHTML = '';
+}
+
+function renderMappingList() {
+  mappingList.innerHTML = '';
+
+  bomColumns.forEach(colName => {
+    const row = document.createElement('div');
+    row.className = 'mapping-row';
+
+    const sampleVal = getSampleValue(colName);
+    const nameEl = document.createElement('div');
+    nameEl.className = 'mapping-col-name';
+    nameEl.innerHTML = colName + (sampleVal ? `<span class="sample">例: ${sampleVal}</span>` : '');
+
+    const arrow = document.createElement('div');
+    arrow.className = 'arrow';
+    arrow.textContent = '→';
+
+    const select = document.createElement('select');
+    select.className = 'mapping-select';
+    select.dataset.col = colName;
+
+    const optNone = document.createElement('option');
+    optNone.value = '';
+    optNone.textContent = '— 未映射 —';
+    select.appendChild(optNone);
+
+    FIELD_OPTIONS.forEach(fo => {
+      const opt = document.createElement('option');
+      opt.value = fo.key;
+      opt.textContent = fo.label;
+      select.appendChild(opt);
+    });
+
+    const currentKey = Object.entries(columnMap).find(([k, v]) => v === colName);
+    if (currentKey) select.value = currentKey[0];
+
+    updateSelectStyle(select);
+    select.addEventListener('change', () => onMappingChange(select));
+
+    row.appendChild(nameEl);
+    row.appendChild(arrow);
+    row.appendChild(select);
+    mappingList.appendChild(row);
+  });
+}
+
+function getSampleValue(colName) {
+  for (const row of bomRows.slice(0, 3)) {
+    const v = String(row[colName] || '').trim();
+    if (v) return v.length > 20 ? v.slice(0, 20) + '…' : v;
+  }
+  return '';
+}
+
+function onMappingChange(select) {
+  const selectedKey = select.value;
+  const colName = select.dataset.col;
+
+  if (selectedKey) {
+    const prevCol = columnMap[selectedKey];
+    if (prevCol && prevCol !== colName) {
+      columnMap[selectedKey] = colName;
+      const prevSelect = mappingList.querySelector(`select[data-col="${CSS.escape(prevCol)}"]`);
+      if (prevSelect) { prevSelect.value = ''; updateSelectStyle(prevSelect); }
+    } else {
+      columnMap[selectedKey] = colName;
+    }
+
+    const oldKey = Object.entries(columnMap).find(([k, v]) => v === colName && k !== selectedKey);
+    if (oldKey) delete columnMap[oldKey[0]];
+  } else {
+    const oldKey = Object.entries(columnMap).find(([k, v]) => v === colName);
+    if (oldKey) delete columnMap[oldKey[0]];
+  }
+
+  mappingList.querySelectorAll('select').forEach(s => updateSelectStyle(s));
+}
+
+function updateSelectStyle(select) {
+  select.classList.remove('mapped-required', 'mapped-optional', 'unmapped', 'missing-required');
+  const key = select.value;
+  if (!key) {
+    select.classList.add('unmapped');
+  } else {
+    const field = BOM_FIELDS.find(f => f.key === key);
+    select.classList.add(field?.required ? 'mapped-required' : 'mapped-optional');
+  }
+}
+
+/* ═══ Analyze Button ═══ */
+btnAnalyze.addEventListener('click', () => {
+  const missing = BOM_FIELDS.filter(f => f.required && !columnMap[f.key]);
+  if (missing.length) {
+    const errEl = document.querySelector('.mapping-actions .mapping-error');
+    if (errEl) errEl.remove();
+    const err = document.createElement('span');
+    err.className = 'mapping-error';
+    err.textContent = `缺少必填映射：${missing.map(f => f.label).join('、')}`;
+    btnAnalyze.parentElement.insertBefore(err, btnAnalyze);
+
+    mappingList.querySelectorAll('select').forEach(s => {
+      if (!s.value) {
+        const unmappedRequired = missing.some(f => !columnMap[f.key]);
+        if (unmappedRequired) {
+          const currentKey = s.value;
+          if (!currentKey) {
+            /* highlight selects that have no value when required fields are missing */
+          }
+        }
+      }
+    });
+    return;
+  }
+
+  const errEl = document.querySelector('.mapping-actions .mapping-error');
+  if (errEl) errEl.remove();
+
+  runAudit();
+});
 
 /* ═══ Table Render ═══ */
 function renderTable() {
@@ -196,7 +334,6 @@ function runAudit() {
   checkQuantity();
   checkDuplicatePN();
   checkDuplicateMPN();
-  checkMultiPNSameSpec();
 
   applyRowStyles();
   renderResults();
@@ -229,14 +366,14 @@ function parseRefs(refStr) {
 }
 
 function checkQuantity() {
-  if (!columnMap.qty || !columnMap.ref) return;
   bomRows.forEach((row, i) => {
-    const qtyVal = parseInt(col(row, 'qty'), 10);
+    const qtyRaw = col(row, 'qty');
+    const qtyVal = parseInt(qtyRaw, 10);
     const refs = parseRefs(col(row, 'ref'));
     if (isNaN(qtyVal) || refs.length === 0) return;
     if (refs.length !== qtyVal) {
       addResult('qty', 'error',
-        `数量不匹配：用量=${qtyVal}，位号数=${refs.length}（${col(row,'ref')}）`,
+        `数量不匹配：基本用量=${qtyVal}，位号数=${refs.length}（${col(row,'ref')}）`,
         [i]);
     }
   });
@@ -244,7 +381,6 @@ function checkQuantity() {
 
 /* ── Rule 3: Duplicate Part Number ── */
 function checkDuplicatePN() {
-  if (!columnMap.partNumber) return;
   const map = {};
   bomRows.forEach((row, i) => {
     const pn = col(row, 'partNumber');
@@ -261,7 +397,6 @@ function checkDuplicatePN() {
 
 /* ── Rule 4: Duplicate MPN ── */
 function checkDuplicateMPN() {
-  if (!columnMap.mpn) return;
   const map = {};
   bomRows.forEach((row, i) => {
     const mpn = col(row, 'mpn');
@@ -272,33 +407,6 @@ function checkDuplicateMPN() {
     if (idxs.length > 1) {
       const rowNums = idxs.map(i => bomRows[i]._idx).join(', ');
       addResult('dup-mpn', 'warning', `重复厂商料号 "${mpn}"（行 ${rowNums}）`, idxs);
-    }
-  }
-}
-
-/* ── Rule 5: Same Value+Pkg, Multiple PNs ── */
-function checkMultiPNSameSpec() {
-  if (!columnMap.value || !columnMap.pkg || !columnMap.partNumber) return;
-  const groups = {};
-  bomRows.forEach((row, i) => {
-    const v = col(row, 'value').toUpperCase();
-    const p = col(row, 'pkg').toUpperCase();
-    if (!v || !p) return;
-    const key = `${v}||${p}`;
-    if (!groups[key]) groups[key] = {};
-    const pn = col(row, 'partNumber');
-    if (!pn) return;
-    (groups[key][pn] = groups[key][pn] || []).push(i);
-  });
-  for (const [spec, pnMap] of Object.entries(groups)) {
-    const pns = Object.keys(pnMap);
-    if (pns.length > 1) {
-      const allIdxs = Object.values(pnMap).flat();
-      const [v, p] = spec.split('||');
-      const pnList = pns.join(', ');
-      addResult('multi-pn', 'info',
-        `同规格多料号：Value=${v} 封装=${p}，料号：${pnList}`,
-        allIdxs);
     }
   }
 }
@@ -325,14 +433,17 @@ function applyRowStyles() {
 function clearResults() {
   resultsGroups.innerHTML = '';
   resultsPlaceholder.style.display = 'flex';
+  resultsPlaceholder.querySelector('.placeholder-icon').textContent = '📋';
+  resultsPlaceholder.querySelector('.placeholder-text').textContent = '上传 BOM 文件后配置列映射，点击"开始 BOM 分析"';
   updateSummary(true);
+  bomBody.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-error', 'row-warning'));
 }
 
 function renderResults() {
   resultsGroups.innerHTML = '';
   if (!auditResults.length) {
     resultsPlaceholder.style.display = 'flex';
-    resultsPlaceholder.querySelector('.placeholder-text').textContent = '✅ BOM 审核通过，未发现问题';
+    resultsPlaceholder.querySelector('.placeholder-text').textContent = '审核通过，未发现问题';
     resultsPlaceholder.querySelector('.placeholder-icon').textContent = '🎉';
     return;
   }
@@ -358,7 +469,7 @@ function renderResults() {
       item.className = 'result-item';
       const typeLabel = {
         banned: '禁用物料', qty: '数量不匹配',
-        'dup-pn': '重复料号', 'dup-mpn': '重复厂商料号', 'multi-pn': '同规格多料号'
+        'dup-pn': '重复料号', 'dup-mpn': '重复厂商料号'
       }[r.type] || r.type;
       item.innerHTML = `
         <span class="ri-type ri-type-${r.type}">${typeLabel}</span>
@@ -391,7 +502,7 @@ exportReportBtn.addEventListener('click', () => {
 
   const reportRows = auditResults.map(r => ({
     '严重程度': { error: '错误', warning: '警告', info: '提示' }[r.severity],
-    '类型': { banned:'禁用物料', qty:'数量不匹配', 'dup-pn':'重复料号', 'dup-mpn':'重复厂商料号', 'multi-pn':'同规格多料号' }[r.type],
+    '类型': { banned:'禁用物料', qty:'数量不匹配', 'dup-pn':'重复料号', 'dup-mpn':'重复厂商料号' }[r.type],
     '描述': r.desc,
     '涉及行号': r.rows.map(i => bomRows[i]._idx).join(', ')
   }));
