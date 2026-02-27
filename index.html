@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BOM 审核专家</title>
+  <link rel="stylesheet" href="style.css?v=1" />
+</head>
+<body>
+  <div class="app">
+    <aside class="left-panel">
+      <div class="panel-header">
+        <h2>BOM 审核专家</h2>
+      </div>
+
+      <div class="upload-section">
+        <div class="upload-box" id="bomUpload">
+          <div class="upload-icon">📄</div>
+          <div class="upload-text">拖拽或点击上传 BOM 文件</div>
+          <div class="upload-hint">支持 .xlsx / .xls / .csv</div>
+          <input type="file" id="bomFileInput" accept=".xlsx,.xls,.csv" hidden />
+        </div>
+        <div class="upload-box upload-box-small" id="banUpload">
+          <div class="upload-icon">🚫</div>
+          <div class="upload-text">上传禁用物料清单（可选）</div>
+          <div class="upload-hint">支持 .xlsx / .xls / .csv</div>
+          <input type="file" id="banFileInput" accept=".xlsx,.xls,.csv" hidden />
+        </div>
+      </div>
+
+      <div class="file-info" id="fileInfo"></div>
+
+      <div class="table-section" id="tableSection">
+        <div class="table-toolbar">
+          <span class="table-title" id="tableTitle">BOM 数据</span>
+          <span class="table-count" id="tableCount"></span>
+        </div>
+        <div class="table-wrap">
+          <table id="bomTable">
+            <thead><tr id="bomHead"></tr></thead>
+            <tbody id="bomBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
+
+    <main class="right-panel">
+      <div class="summary-bar" id="summaryBar">
+        <div class="summary-item total">
+          <span class="summary-num" id="sumTotal">0</span>
+          <span class="summary-label">总物料</span>
+        </div>
+        <div class="summary-item error">
+          <span class="summary-num" id="sumError">0</span>
+          <span class="summary-label">错误</span>
+        </div>
+        <div class="summary-item warning">
+          <span class="summary-num" id="sumWarn">0</span>
+          <span class="summary-label">警告</span>
+        </div>
+        <div class="summary-item info">
+          <span class="summary-num" id="sumInfo">0</span>
+          <span class="summary-label">提示</span>
+        </div>
+        <button class="btn-export" id="exportReportBtn" title="导出审核报告">↓ 报告</button>
+      </div>
+
+      <div class="results-panel" id="resultsPanel">
+        <div class="results-placeholder" id="resultsPlaceholder">
+          <div class="placeholder-icon">📋</div>
+          <div class="placeholder-text">上传 BOM 文件后自动开始审核</div>
+        </div>
+        <div class="results-groups" id="resultsGroups"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="app.js?v=1"></script>
+</body>
+</html>
