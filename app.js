@@ -447,17 +447,31 @@ function checkBannedKeywords() {
   });
 }
 
-/* ── Rule 1c: NC/NI (Not Installed) detection in MPN ── */
-const NC_PATTERN = /[/\\](nc|ni)\b/i;
+/* ── Rule 1c: NC/NI (Not Installed) detection ── */
+const NC_PATTERNS = [
+  /[/\\]\s*(nc|ni)\b/i,   // /NC  \NC  /NI  \NI  / NC
+  /^(nc|ni)$/i,            // exact "NC" or "NI"
+  /\bnot\s*install/i,      // "not installed" / "notinstall"
+];
 
 function checkNCParts() {
   bomRows.forEach((row, i) => {
     const mpn = col(row, 'mpn');
-    if (!mpn) return;
-    if (NC_PATTERN.test(mpn)) {
-      addResult('nc', 'warning',
-        `疑似未安装物料：厂商料号 "${mpn}"，请确认是否需要移除`,
-        [i]);
+    const pn = col(row, 'partNumber');
+    const desc = col(row, 'description');
+    const targets = [
+      { label: '厂商料号', val: mpn },
+      { label: '料号', val: pn },
+      { label: '物料描述', val: desc },
+    ];
+    for (const t of targets) {
+      if (!t.val) continue;
+      if (NC_PATTERNS.some(p => p.test(t.val))) {
+        addResult('nc', 'warning',
+          `疑似未安装物料：${t.label} "${t.val}"，请确认是否需要移除`,
+          [i]);
+        break;
+      }
     }
   });
 }
